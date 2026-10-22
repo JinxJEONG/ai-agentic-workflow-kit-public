@@ -1,0 +1,9 @@
+---
+version: 2
+last_verified: '{{DATE}}'
+status: draft
+policy:
+  source_of_truth: this_file_only
+  secrets_policy: store_names_or_sources_only
+  evidence_policy: store_exit_codes_timestamps_and_digests_only
+environments: {}

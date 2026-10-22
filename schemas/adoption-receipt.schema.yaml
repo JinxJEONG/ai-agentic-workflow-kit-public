@@ -1,0 +1,38 @@
+dialect: harness-schema/v1
+title: Phase 3 adoption receipt
+type: mapping
+additional_properties: false
+required:
+  - receipt_schema
+  - kit_version
+  - kit_bundle_digest
+  - rendered_install_digest
+  - plan_digest
+  - adopted_branch
+  - harness_tree_digest_algo
+  - harness_tree_digest
+properties:
+  receipt_schema:
+    type: integer
+    const: 1
+  kit_version:
+    type: string
+    min_length: 1
+  kit_bundle_digest:
+    type: string
+    format: sha256
+  rendered_install_digest:
+    type: string
+    format: sha256
+  plan_digest:
+    type: string
+    format: sha256
+  adopted_branch:
+    type: string
+    min_length: 1
+  harness_tree_digest_algo:
+    type: string
+    const: sha256-framed-git-tree-v1
+  harness_tree_digest:
+    type: string
+    format: sha256

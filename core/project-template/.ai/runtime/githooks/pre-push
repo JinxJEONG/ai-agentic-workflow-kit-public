@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+WORKSPACE_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)
+REPO_ROOT=$(git rev-parse --show-toplevel)
+REMOTE_NAME=${1:-}
+
+echo "[change-set] validating structure and the actual remote/local ref commit ranges..."
+ruby "$WORKSPACE_ROOT/.ai/runtime/scripts/validate_change_set.rb" --mode pre-push --repo-root "$REPO_ROOT" --remote "$REMOTE_NAME"

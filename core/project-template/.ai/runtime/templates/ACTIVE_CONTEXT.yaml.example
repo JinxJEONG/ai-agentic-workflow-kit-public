@@ -1,0 +1,12 @@
+---
+schema_version: 2
+last_updated: YYYY-MM-DD
+status: idle
+active_streams: []
+notes:
+- Read this file first to discover active features and streams.
+- This is an example only; runtime state belongs under .ai/local/.
+state_revision: 0
+version: 2
+active_features: []
+default_feature:

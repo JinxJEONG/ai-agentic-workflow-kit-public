@@ -1,0 +1,60 @@
+dialect: harness-schema/v1
+title: Project specification registry
+type: mapping
+additional_properties: false
+required: [schema_version, project_id, rules]
+properties:
+  schema_version:
+    type: integer
+    const: 1
+  project_id:
+    type: string
+    min_length: 1
+  additional_high_risk_globs:
+    type: sequence
+    items:
+      type: string
+      min_length: 1
+  rules:
+    type: sequence
+    min_items: 1
+    items:
+      type: mapping
+      additional_properties: false
+      required: [id, source_globs, canonical_specs, generated_facts, checks, impact_policy, codeowners]
+      properties:
+        id:
+          type: string
+          min_length: 1
+        source_globs:
+          type: sequence
+          min_items: 1
+          items:
+            type: string
+            min_length: 1
+        canonical_specs:
+          type: sequence
+          min_items: 1
+          items:
+            type: string
+            format: relative-path
+        generated_facts:
+          type: sequence
+          items:
+            type: string
+            format: relative-path
+        checks:
+          type: sequence
+          min_items: 1
+          items:
+            type: string
+            min_length: 1
+        impact_policy:
+          type: string
+          enum: [spec_update_required, spec_update_or_approved_no_impact]
+        codeowners:
+          type: sequence
+          min_items: 1
+          items:
+            type: string
+            pattern: '\A@[A-Za-z0-9][A-Za-z0-9-]*(?:/[A-Za-z0-9][A-Za-z0-9_-]*)?\z'

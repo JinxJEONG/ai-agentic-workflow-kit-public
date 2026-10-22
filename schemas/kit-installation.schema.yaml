@@ -1,0 +1,74 @@
+dialect: harness-schema/v1
+title: Workflow Kit installation lock
+type: mapping
+additional_properties: true
+required:
+  - schema_version
+  - project_id
+  - kit_version
+  - kit_bundle_digest
+  - release_manifest_digest
+  - bundle_digest_algo
+  - rendered_digest_algo
+  - dirty_snapshot_algo
+  - repository_fingerprint
+  - installation_state
+  - profile
+  - protected_paths
+  - source
+properties:
+  schema_version:
+    type: integer
+    const: 2
+  project_id:
+    type: string
+    min_length: 1
+    pattern: '^[a-zA-Z0-9][a-zA-Z0-9._-]*$'
+  kit_version:
+    type: string
+    min_length: 1
+  kit_bundle_digest:
+    type: any
+  release_manifest_digest:
+    type: any
+  bundle_digest_algo:
+    type: integer
+    const: 2
+  rendered_digest_algo:
+    type: integer
+    const: 2
+  dirty_snapshot_algo:
+    type: integer
+    const: 4
+  repository_fingerprint:
+    type: string
+    format: sha256
+  installation_state:
+    type: string
+    enum: [managed, legacy]
+  profile:
+    type: string
+    enum: [generic, fastapi-alembic, nextjs-typescript, postgresql, full-stack]
+  protected_paths:
+    type: sequence
+    min_items: 1
+    items:
+      type: string
+      min_length: 1
+  source:
+    type: mapping
+    additional_properties: true
+    required: [kind, locator]
+    properties:
+      kind:
+        type: string
+        enum: [local, github-release]
+      locator:
+        type: string
+        format: uri
+      manifest_locator:
+        type: string
+        format: uri
+      bundle_archive_sha256:
+        type: string
+        format: sha256

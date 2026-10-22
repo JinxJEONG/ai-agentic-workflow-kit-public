@@ -1,0 +1,241 @@
+name: reusable-spec-gate
+
+on:
+  workflow_call:
+    inputs:
+      kit_repository:
+        required: true
+        type: string
+      kit_commit:
+        required: true
+        type: string
+      kit_version:
+        required: true
+        type: string
+      kit_bundle_digest:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  trust-workflow-source:
+    name: spec-gate-trust
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      kit_commit: ${{ steps.trust.outputs.kit_commit }}
+    steps:
+      - name: Bind caller inputs to the immutable called workflow
+        id: trust
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          KIT_REPOSITORY: ${{ inputs.kit_repository }}
+          KIT_COMMIT: ${{ inputs.kit_commit }}
+          KIT_VERSION: ${{ inputs.kit_version }}
+          KIT_BUNDLE_DIGEST: ${{ inputs.kit_bundle_digest }}
+        run: |
+          set -euo pipefail
+          test "$EVENT_NAME" = pull_request || test "$EVENT_NAME" = push
+          test "$KIT_REPOSITORY" = JinxJEONG/ai-agentic-workflow-kit-public
+          [[ "$KIT_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$KIT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          [[ "$KIT_BUNDLE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          response=$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=ai-agentic-workflow-kit-spec-gate")
+          token=$(jq -er '.value' <<<"$response")
+          claims=$(OIDC_TOKEN="$token" python3 -c '
+          import base64, json, os
+          part = os.environ["OIDC_TOKEN"].split(".")[1]
+          part += "=" * (-len(part) % 4)
+          print(json.dumps(json.loads(base64.urlsafe_b64decode(part))))
+          ')
+          workflow_ref=$(jq -er '.job_workflow_ref' <<<"$claims")
+          workflow_sha=$(jq -er '.job_workflow_sha' <<<"$claims")
+          runner_environment=$(jq -er '.runner_environment' <<<"$claims")
+          test "$workflow_ref" = "JinxJEONG/ai-agentic-workflow-kit-public/.github/workflows/spec-gate.yml@$KIT_COMMIT"
+          [[ "$workflow_sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$KIT_COMMIT" = "$workflow_sha"
+          test "$runner_environment" = github-hosted
+          printf 'kit_commit=%s\n' "$workflow_sha" >> "$GITHUB_OUTPUT"
+
+  spec-gate:
+    name: spec-gate
+    needs: trust-workflow-source
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    steps:
+      - name: Reject an untrusted reusable-workflow source
+        if: needs.trust-workflow-source.result != 'success'
+        run: exit 1
+
+      - name: Bind the validation runner to the immutable called workflow
+        id: bind-validation-runner
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.trust-workflow-source.outputs.kit_commit }}
+        run: |
+          set -euo pipefail
+          response=$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=ai-agentic-workflow-kit-spec-gate-runner")
+          token=$(jq -er '.value' <<<"$response")
+          claims=$(OIDC_TOKEN="$token" python3 -c '
+          import base64, json, os
+          part = os.environ["OIDC_TOKEN"].split(".")[1]
+          part += "=" * (-len(part) % 4)
+          print(json.dumps(json.loads(base64.urlsafe_b64decode(part))))
+          ')
+          workflow_ref=$(jq -er '.job_workflow_ref' <<<"$claims")
+          workflow_sha=$(jq -er '.job_workflow_sha' <<<"$claims")
+          runner_environment=$(jq -er '.runner_environment' <<<"$claims")
+          test "$workflow_ref" = "JinxJEONG/ai-agentic-workflow-kit-public/.github/workflows/spec-gate.yml@$EXPECTED_COMMIT"
+          test "$workflow_sha" = "$EXPECTED_COMMIT"
+          test "$runner_environment" = github-hosted
+
+      - name: Set up the supported Ruby runtime
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.263.0
+        with:
+          ruby-version: "3.1"
+
+      - name: Resolve the exact private workflow-kit source
+        id: kit-source
+        uses: JinxJEONG/ai-agentic-workflow-kit-public/.github/actions/spec-gate-source@5be2618a8e0fd7d77ba252100b05e72feab17e6a
+        with:
+          expected-ref: 5be2618a8e0fd7d77ba252100b05e72feab17e6a
+          expected-bundle-digest: ${{ inputs.kit_bundle_digest }}
+
+      - name: Check out project with history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify workflow-kit version and bundle identity
+        env:
+          KIT_ROOT: ${{ steps.kit-source.outputs.repository-root }}
+          EXPECTED_DIGEST: ${{ inputs.kit_bundle_digest }}
+          EXPECTED_VERSION: ${{ inputs.kit_version }}
+        run: |
+          test "$(cat "$KIT_ROOT/VERSION")" = "$EXPECTED_VERSION"
+          test "sha256:$(ruby "$KIT_ROOT/engine/release/release_digest.rb" --filesystem-root "$KIT_ROOT")" = "$EXPECTED_DIGEST"
+
+      - name: Verify the exact project lock
+        env:
+          EXPECTED_VERSION: ${{ inputs.kit_version }}
+          EXPECTED_DIGEST: ${{ inputs.kit_bundle_digest }}
+        run: |
+          ruby -ryaml -e '
+            lock = YAML.safe_load(File.read(".ai/KIT_INSTALLATION.yaml"), permitted_classes: [], permitted_symbols: [], aliases: false)
+            abort "kit version mismatch" unless lock["kit_version"] == ENV.fetch("EXPECTED_VERSION")
+            abort "kit digest mismatch" unless lock["kit_bundle_digest"] == ENV.fetch("EXPECTED_DIGEST")
+          '
+
+      - name: Validate installed harness and registry
+        env:
+          KIT_ROOT: ${{ steps.kit-source.outputs.repository-root }}
+          EXPECTED_COMMIT: ${{ needs.trust-workflow-source.outputs.kit_commit }}
+          EXPECTED_DIGEST: ${{ inputs.kit_bundle_digest }}
+        run: |
+          ruby "$KIT_ROOT/engine/validators/validate_install.rb" \
+            --trusted-kit-root "$KIT_ROOT" \
+            --trusted-kit-source-mode action-source \
+            --expected-kit-commit "$EXPECTED_COMMIT" \
+            --expected-kit-bundle-digest "$EXPECTED_DIGEST" \
+            --execution-profile hosted-no-project-code \
+            .
+          mapfile -t receipt_commits < <(
+            git log --diff-filter=A --format=%H -- .ai/generated/adoption-receipt.json
+          )
+          test "${#receipt_commits[@]}" -eq 1
+          receipt_commit=${receipt_commits[0]}
+          git diff --quiet "$receipt_commit" HEAD -- .ai/generated/adoption-receipt.json
+          ruby "$KIT_ROOT/core/project-template/.ai/runtime/scripts/adoption_receipt.rb" verify --source "$receipt_commit" .
+          ruby "$KIT_ROOT/engine/validators/validate_spec_registry.rb" .ai/SPEC_REGISTRY.yaml
+
+      - name: Determine trusted comparison range
+        id: range
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -eu
+          if [ "$EVENT_NAME" = pull_request ]; then
+            base=$PR_BASE
+            head=$PR_HEAD
+          else
+            base=$PUSH_BASE
+            head=$PUSH_HEAD
+          fi
+
+          case "$base" in
+            ""|0000000000000000000000000000000000000000)
+              default_ref="refs/remotes/origin/$DEFAULT_BRANCH"
+              if git rev-parse --verify "$default_ref^{commit}" >/dev/null 2>&1; then
+                candidate=$(git merge-base "$head" "$default_ref")
+              else
+                candidate=""
+              fi
+              if [ -n "$candidate" ] && [ "$candidate" != "$head" ]; then
+                base=$candidate
+              else
+                base=$(git mktree </dev/null)
+              fi
+              ;;
+          esac
+          git rev-parse --verify "$base^{commit}" >/dev/null
+          git rev-parse --verify "$head^{commit}" >/dev/null
+          printf 'base=%s\nhead=%s\n' "$base" "$head" >> "$GITHUB_OUTPUT"
+
+      - name: Collect latest pull-request reviews
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" \
+            > "$RUNNER_TEMP/spec-gate-review-pages.json"
+          jq 'add' "$RUNNER_TEMP/spec-gate-review-pages.json" \
+            > "$RUNNER_TEMP/spec-gate-reviews.json"
+
+      - name: Enforce specification freshness
+        shell: bash
+        env:
+          KIT_ROOT: ${{ steps.kit-source.outputs.repository-root }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          BASE_SHA: ${{ steps.range.outputs.base }}
+          HEAD_SHA: ${{ steps.range.outputs.head }}
+        run: |
+          set -euo pipefail
+          args=(
+            --root .
+            --base "$BASE_SHA"
+            --head "$HEAD_SHA"
+            --execution-profile hosted-no-project-code
+            --github-event "$GITHUB_EVENT_PATH"
+            --github-repository "$REPOSITORY"
+          )
+          if [ "$EVENT_NAME" = pull_request ]; then
+            args+=(--github-reviews "$RUNNER_TEMP/spec-gate-reviews.json")
+          fi
+          ruby "$KIT_ROOT/engine/validators/validate_spec_freshness.rb" "${args[@]}"

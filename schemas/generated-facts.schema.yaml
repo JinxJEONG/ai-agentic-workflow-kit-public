@@ -1,0 +1,45 @@
+dialect: harness-schema/v1
+title: Deterministic generated project facts
+type: mapping
+additional_properties: false
+required:
+  - generated_schema
+  - rule_id
+  - fact_type
+  - generator_version
+  - generated_at
+  - source_digest_algo
+  - source_tree_digest
+  - source_commit_hint
+  - content_digest
+  - facts
+properties:
+  generated_schema:
+    type: integer
+    const: 2
+  rule_id:
+    type: string
+    min_length: 1
+  fact_type:
+    type: string
+    enum: [fastapi-routes, nextjs-routes, python-symbols, typescript-exports, migration-checksums, environment-variables, deployment-inputs, postgresql-schema]
+  generator_version:
+    type: string
+    min_length: 1
+  generated_at:
+    type: string
+    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+  source_digest_algo:
+    type: integer
+    const: 1
+  source_tree_digest:
+    type: string
+    format: sha256
+  source_commit_hint:
+    type: string
+    format: git-object
+  content_digest:
+    type: string
+    format: sha256
+  facts:
+    type: any

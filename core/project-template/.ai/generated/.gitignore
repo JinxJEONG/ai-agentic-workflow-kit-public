@@ -1,0 +1,4 @@
+# Generated facts are intentionally selected and committed by project policy.
+# Ignore scratch material while keeping the directory present.
+*.tmp
+*.partial

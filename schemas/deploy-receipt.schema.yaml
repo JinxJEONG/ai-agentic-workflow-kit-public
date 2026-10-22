@@ -1,0 +1,91 @@
+dialect: harness-schema/v1
+title: Deploy receipt digest inputs
+type: mapping
+additional_properties: false
+required:
+  - receipt_schema
+  - kit_version
+  - kit_bundle_digest
+  - rendered_install_digest
+  - spec_registry_digest
+  - source_digest_algo
+  - rules
+  - generated_facts
+  - project_release_evidence
+properties:
+  receipt_schema:
+    type: integer
+    const: 2
+  kit_version:
+    type: string
+    min_length: 1
+  kit_bundle_digest:
+    type: string
+    format: sha256
+  rendered_install_digest:
+    type: string
+    format: sha256
+  spec_registry_digest:
+    type: string
+    format: sha256
+  source_digest_algo:
+    type: integer
+    const: 1
+  rules:
+    type: sequence
+    min_items: 1
+    items:
+      type: mapping
+      additional_properties: false
+      required: [rule_id, source_tree_digest]
+      properties:
+        rule_id:
+          type: string
+          min_length: 1
+        source_tree_digest:
+          type: string
+          format: sha256
+  generated_facts:
+    type: sequence
+    items:
+      type: mapping
+      additional_properties: false
+      required: [path, content_digest]
+      properties:
+        path:
+          type: string
+          format: relative-path
+        content_digest:
+          type: string
+          format: sha256
+  db_migration:
+    type: mapping
+    additional_properties: false
+    required: [head, checksum]
+    properties:
+      head:
+        type: string
+        min_length: 1
+      checksum:
+        type: string
+        format: sha256
+  project_release_evidence:
+    type: mapping
+    additional_properties: false
+    required: [artifact_digest, immutable_copy_required]
+    properties:
+      wrapper:
+        type: string
+        format: relative-path
+      artifact_digest:
+        type: string
+        format: sha256
+      immutable_copy_required:
+        type: boolean
+        const: true
+      attestation:
+        type: string
+        min_length: 1
+  note:
+    type: string
+    min_length: 1

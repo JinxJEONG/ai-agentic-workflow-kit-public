@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+WORKSPACE_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)
+REPO_ROOT=$(git rev-parse --show-toplevel)
+
+echo "[change-set] validating staged structure, ownership, risk policy, and docs impact..."
+ruby "$WORKSPACE_ROOT/.ai/runtime/scripts/validate_change_set.rb" --mode staged --repo-root "$REPO_ROOT"

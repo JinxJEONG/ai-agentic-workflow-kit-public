@@ -1,0 +1,16 @@
+schema_version: 1
+high_risk_globs:
+  - '**/migrations/**'
+  - '**/*.sql'
+  - 'db/**'
+  - '**/lib/db/**'
+  - 'deploy/**'
+  - 'ops/**'
+  - '**/auth/**'
+  - '**/authz/**'
+  - '.github/workflows/**'
+  - '**/Dockerfile'
+  - '**/docker-compose*.yml'
+  - '**/compose*.yaml'
+  - '**/*.tf'
+  - '**/secrets*'

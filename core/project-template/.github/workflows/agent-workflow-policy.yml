@@ -1,0 +1,88 @@
+name: Agent Workflow Policy
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.263.0
+        with:
+          ruby-version: "3.1"
+      - name: Validate installed structure
+        run: ruby .ai/runtime/scripts/validate_agent_structure.rb
+      - name: Validate immutable Phase 3 adoption receipt
+        shell: sh
+        run: |
+          set -eu
+          set -- $(git log --diff-filter=A --format=%H -- .ai/generated/adoption-receipt.json)
+          test "$#" -eq 1
+          receipt_commit=$1
+          git diff --quiet "$receipt_commit" HEAD -- .ai/generated/adoption-receipt.json
+          ruby .ai/runtime/scripts/adoption_receipt.rb verify --source "$receipt_commit"
+
+  validate-change-set:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.263.0
+        with:
+          ruby-version: "3.1"
+      - name: Resolve authoritative Git range
+        id: range
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: sh
+        run: |
+          set -eu
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base_sha=$PR_BASE_SHA
+            head_sha=$PR_HEAD_SHA
+          else
+            base_sha=$PUSH_BEFORE_SHA
+            head_sha=$PUSH_HEAD_SHA
+          fi
+
+          case "$base_sha" in
+            ""|0000000000000000000000000000000000000000)
+              default_ref="refs/remotes/origin/$DEFAULT_BRANCH"
+              if git rev-parse --verify "$default_ref^{commit}" >/dev/null 2>&1; then
+                candidate=$(git merge-base "$head_sha" "$default_ref")
+              else
+                candidate=""
+              fi
+              if [ -n "$candidate" ] && [ "$candidate" != "$head_sha" ]; then
+                base_sha=$candidate
+              else
+                base_sha=$(git mktree </dev/null)
+              fi
+              ;;
+          esac
+
+          git rev-parse --verify "$head_sha^{commit}" >/dev/null
+          printf 'range=%s..%s\n' "$base_sha" "$head_sha" >>"$GITHUB_OUTPUT"
+      - name: Validate tracked ownership, policy, docs, and evidence
+        env:
+          CHANGE_RANGE: ${{ steps.range.outputs.range }}
+        run: ruby .ai/runtime/scripts/validate_change_set.rb --mode range --range "$CHANGE_RANGE"
+      - name: Scan for high-confidence secret material
+        env:
+          CHANGE_RANGE: ${{ steps.range.outputs.range }}
+        run: ruby .ai/runtime/scripts/scan_repository_secrets.rb --range "$CHANGE_RANGE"

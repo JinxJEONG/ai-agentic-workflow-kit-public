@@ -1,0 +1,241 @@
+name: Resolve specification gate source
+description: Expose and validate the exact repository tree downloaded for this action.
+
+inputs:
+  expected-ref:
+    description: Exact full commit SHA used in the remote action uses reference.
+    required: true
+  expected-repository:
+    description: Exact repository expected to own the downloaded action.
+    required: false
+    default: JinxJEONG/ai-agentic-workflow-kit-public
+  expected-bundle-digest:
+    description: Exact sha256-prefixed canonical bundle digest for the downloaded source tree.
+    required: true
+  expected-files:
+    description: Newline-delimited regular files required in the downloaded repository tree.
+    required: false
+    default: |-
+      VERSION
+      engine/release/release_digest.rb
+      engine/release/release_manifest.rb
+      engine/validators/schema.rb
+      engine/validators/validate_install.rb
+      installer/lib/install_integrity.rb
+      .github/actions/spec-gate-source/action.yml
+      .github/actions/spec-gate-source/repository-root.sentinel
+
+outputs:
+  repository-root:
+    description: Absolute root of the exact repository tree downloaded for this action.
+    value: ${{ steps.resolve.outputs.repository-root }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      env:
+        ACTION_PATH_CONTEXT: ${{ github.action_path }}
+        ACTION_REF: ${{ github.action_ref }}
+        ACTION_REPOSITORY: ${{ github.action_repository }}
+        EXPECTED_REF: ${{ inputs.expected-ref }}
+        EXPECTED_REPOSITORY: ${{ inputs.expected-repository }}
+        EXPECTED_BUNDLE_DIGEST: ${{ inputs.expected-bundle-digest }}
+        EXPECTED_FILES: ${{ inputs.expected-files }}
+      run: |
+        set -euo pipefail
+
+        fail() {
+          echo "spec-gate-source: $*" >&2
+          exit 1
+        }
+
+        reject_symlink_components() {
+          local value="$1"
+          local current="/"
+          local component
+          local -a components
+          IFS='/' read -r -a components <<< "${value#/}"
+          for component in "${components[@]}"; do
+            [[ -n "$component" ]] || continue
+            if [[ "$current" == "/" ]]; then
+              current="/$component"
+            else
+              current="$current/$component"
+            fi
+            [[ ! -L "$current" ]] || fail "symbolic-link path component refused: $current"
+          done
+        }
+
+        action_path="${GITHUB_ACTION_PATH:?GITHUB_ACTION_PATH is required}"
+        [[ "$action_path" == /* ]] || fail "GITHUB_ACTION_PATH must be absolute"
+        [[ "$action_path" != *$'\n'* && "$action_path" != *$'\r'* ]] || fail "GITHUB_ACTION_PATH must not contain CR or LF"
+        [[ "$ACTION_PATH_CONTEXT" == "$action_path" ]] || fail "github.action_path does not match GITHUB_ACTION_PATH"
+        [[ "$ACTION_REPOSITORY" == "$EXPECTED_REPOSITORY" ]] || fail "github.action_repository does not match the expected repository"
+        [[ "$EXPECTED_REF" =~ ^[0-9a-f]{40}$ ]] || fail "expected-ref must be a full lowercase commit SHA"
+        [[ "$ACTION_REF" == "$EXPECTED_REF" ]] || fail "github.action_ref does not match expected-ref"
+        action_path="${action_path%/}"
+        [[ "$(basename "$action_path")" == "spec-gate-source" ]] || fail "unexpected action directory"
+        [[ "$(basename "$(dirname "$action_path")")" == "actions" ]] || fail "unexpected action parent"
+        [[ "$(basename "$(dirname "$(dirname "$action_path")")")" == ".github" ]] || fail "unexpected action location"
+
+        repository_root="$(dirname "$(dirname "$(dirname "$action_path")")")"
+        reject_symlink_components "$action_path"
+        [[ -d "$repository_root" ]] || fail "repository root is not a directory"
+        [[ "$repository_root" == /* && "$repository_root" != *$'\n'* && "$repository_root" != *$'\r'* ]] || fail "repository root output must be absolute and single-line"
+        [[ "$(cd "$repository_root" && pwd -P)" == "$repository_root" ]] || fail "repository root is not canonical"
+
+        sentinel="$repository_root/.github/actions/spec-gate-source/repository-root.sentinel"
+        reject_symlink_components "$sentinel"
+        [[ -f "$sentinel" ]] || fail "repository-root sentinel is missing or not regular"
+        [[ "$(<"$sentinel")" == "ai-agentic-workflow-kit-spec-gate-source-v1" ]] || fail "repository-root sentinel is invalid"
+
+        while IFS= read -r relative || [[ -n "$relative" ]]; do
+          [[ -n "$relative" ]] || continue
+          [[ "$relative" != /* && "$relative" != *$'\n'* && "$relative" != *$'\r'* ]] || fail "expected file path must be relative and single-line"
+          [[ "$relative" != "." && "$relative" != ".." && "$relative" != ./* ]] || fail "expected file path is not normalized: $relative"
+          [[ "/$relative/" != *"/../"* && "/$relative/" != *"/./"* && "$relative" != *"//"* ]] || fail "expected file path is not normalized: $relative"
+          expected="$repository_root/$relative"
+          reject_symlink_components "$expected"
+          [[ -f "$expected" ]] || fail "missing required regular file: $relative"
+        done <<< "$EXPECTED_FILES"
+
+        ruby - "$repository_root" "$EXPECTED_BUNDLE_DIGEST" <<'RUBY'
+        require "digest"
+        require "find"
+        require "pathname"
+
+        BUNDLE_DIGEST_ALGO = 2
+        DEFAULT_EXCLUDES = [
+          ".github/**",
+          ".gitignore",
+          ".memsearch/**",
+          "test/**",
+        ].freeze
+        REGULAR_MODES = [0o644, 0o755].freeze
+
+        class VerificationError < StandardError; end
+
+        def glob_match?(pattern, path)
+          pattern = pattern.to_s.b
+          path = path.to_s.b
+          if pattern.end_with?("/**".b)
+            prefix = pattern.byteslice(0, pattern.bytesize - 2)
+            return true if path.start_with?(prefix)
+          end
+
+          flags = File::FNM_PATHNAME | File::FNM_DOTMATCH
+          File.fnmatch?(pattern, path, flags) || File.fnmatch?(pattern, path, File::FNM_DOTMATCH)
+        end
+
+        def selected_path?(path)
+          !DEFAULT_EXCLUDES.any? { |pattern| glob_match?(pattern, path) }
+        end
+
+        def strict_root(path)
+          candidate = path.to_s
+          unless Pathname.new(candidate).absolute? && Pathname.new(candidate).cleanpath.to_s == candidate
+            raise VerificationError, "source root must be normalized and absolute: #{path}"
+          end
+          expanded = File.expand_path(candidate)
+          current = File::SEPARATOR
+          expanded.delete_prefix(File::SEPARATOR).split(File::SEPARATOR).each do |component|
+            next if component.empty?
+
+            current = current == File::SEPARATOR ? "#{current}#{component}" : File.join(current, component)
+            raise VerificationError, "symbolic-link source path refused: #{current}" if File.lstat(current).symlink?
+          end
+          raise VerificationError, "source root is not a directory: #{expanded}" unless File.directory?(expanded)
+
+          expanded
+        rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR => error
+          raise VerificationError, "cannot resolve source root #{path}: #{error.message}"
+        end
+
+        def digest_file(path, relative, initial_stat)
+          flags = File::RDONLY
+          flags |= File::NOFOLLOW if File.const_defined?(:NOFOLLOW)
+          File.open(path, flags) do |file|
+            opened_stat = file.stat
+            unless opened_stat.file? && opened_stat.dev == initial_stat.dev && opened_stat.ino == initial_stat.ino
+              raise VerificationError, "source entry changed while hashing: #{relative.inspect}"
+            end
+            permissions = opened_stat.mode & 0o7777
+            unless REGULAR_MODES.include?(permissions)
+              raise VerificationError,
+                "non-canonical regular-file mode=#{format('%04o', permissions)} path=#{relative.inspect}"
+            end
+
+            digest = Digest::SHA256.new
+            buffer = +"".b
+            digest.update(buffer) while file.read(64 * 1024, buffer)
+            mode = permissions == 0o755 ? "100755" : "100644"
+            [relative, digest.hexdigest, mode]
+          end
+        rescue Errno::ELOOP => error
+          raise VerificationError, "symbolic link refused while hashing #{relative.inspect}: #{error.message}"
+        end
+
+        def tree_rows(root)
+          rows = []
+          Find.find(root) do |absolute|
+            next if absolute == root
+
+            binary_absolute = absolute.dup.force_encoding(Encoding::BINARY)
+            prefix = "#{root}#{File::SEPARATOR}".b
+            relative = binary_absolute.byteslice(prefix.bytesize, binary_absolute.bytesize - prefix.bytesize).dup
+            stat = File.lstat(absolute)
+            if relative == ".git".b && stat.directory?
+              Find.prune
+              next
+            end
+            next if relative == ".git".b || relative.start_with?(".git/".b)
+            next if stat.directory?
+            next unless selected_path?(relative)
+
+            unless stat.file?
+              mode = stat.symlink? ? "120000" : format("%06o", stat.mode & 0o177777)
+              raise VerificationError, "non-regular entry: mode=#{mode} path=#{relative.inspect}"
+            end
+            rows << digest_file(absolute, relative, stat)
+          end
+          rows
+        rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR => error
+          raise VerificationError, "cannot read source tree #{root}: #{error.message}"
+        end
+
+        def digest_rows(rows)
+          sorted = rows.sort { |left, right| left.first <=> right.first }
+          material = +"workflow-kit-bundle-digest\0#{BUNDLE_DIGEST_ALGO}\0#{sorted.length}\0".b
+          sorted.each do |path, content_digest, mode|
+            material << path.bytesize.to_s.b << ":".b << path
+            material << mode.bytesize.to_s.b << ":".b << mode.b
+            material << content_digest.bytesize.to_s.b << ":".b << content_digest.b
+          end
+          Digest::SHA256.hexdigest(material)
+        end
+
+        begin
+          raise VerificationError, "source verifier requires exactly two arguments" unless ARGV.length == 2
+          root = strict_root(ARGV.fetch(0))
+          expected = ARGV.fetch(1)
+          unless expected.match?(/\Asha256:[0-9a-f]{64}\z/)
+            raise VerificationError, "expected digest must be sha256-prefixed and lowercase"
+          end
+          actual = "sha256:#{digest_rows(tree_rows(root))}"
+          unless actual == expected
+            raise VerificationError, "source bundle digest mismatch: expected #{expected}, got #{actual}"
+          end
+          puts "OK: exact action source bundle verified: #{actual}"
+        rescue VerificationError => error
+          warn "REFUSED: #{error.message}"
+          exit 1
+        end
+        RUBY
+
+        output_path="${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
+        [[ "$output_path" == /* && "$output_path" != *$'\n'* && "$output_path" != *$'\r'* ]] || fail "GITHUB_OUTPUT must be absolute and single-line"
+        reject_symlink_components "$output_path"
+        [[ -f "$output_path" ]] || fail "GITHUB_OUTPUT must be a regular file"
+        printf 'repository-root=%s\n' "$repository_root" >> "$output_path"

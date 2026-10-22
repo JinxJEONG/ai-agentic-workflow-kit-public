@@ -1,0 +1,63 @@
+---
+version: 2
+agent_profiles:
+  architect:
+    include:
+      - .ai/runtime/agents/base/architect.md
+      - .ai/canonical/architecture/README.md
+      - .ai/canonical/decisions/ADR-0001-agentic-workflow.md
+  backend:
+    include:
+      - .ai/runtime/agents/base/backend.md
+      - .ai/canonical/architecture/README.md
+  frontend:
+    include:
+      - .ai/runtime/agents/base/frontend.md
+      - .ai/canonical/architecture/README.md
+  reviewer:
+    include:
+      - .ai/runtime/agents/base/reviewer.md
+      - .ai/canonical/decisions/ADR-0001-agentic-workflow.md
+  pm:
+    include:
+      - .ai/runtime/agents/base/pm.md
+      - .ai/canonical/feature-history/README.md
+  ai-worker:
+    include:
+      - .ai/runtime/agents/base/ai-worker.md
+      - .ai/canonical/PROJECT_RULES.md
+path_contexts:
+  - name: backend
+    patterns:
+      - apps/api/**
+      - services/api/**
+      - src/server/**
+      - backend/**
+    include:
+      - .ai/runtime/agents/base/backend.md
+      - .ai/canonical/architecture/README.md
+  - name: frontend
+    patterns:
+      - apps/web/**
+      - src/app/**
+      - src/components/**
+      - frontend/**
+    include:
+      - .ai/runtime/agents/base/frontend.md
+      - .ai/canonical/architecture/README.md
+  - name: data-or-deploy
+    patterns:
+      - db/**
+      - database/**
+      - migrations/**
+      - deploy/**
+      - auth/**
+      - authentication/**
+      - authorization/**
+      - payments/**
+      - privacy/**
+      - .github/workflows/**
+    include:
+      - .ai/runtime/agents/base/architect.md
+      - .ai/runtime/agents/base/reviewer.md
+      - .ai/canonical/decisions/ADR-0001-agentic-workflow.md

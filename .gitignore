@@ -1,0 +1,16 @@
+.DS_Store
+tmp/
+*.log
+.memsearch/
+.bundle/
+coverage/
+.memsearch.toml
+.mcp.json
+.om-project
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key

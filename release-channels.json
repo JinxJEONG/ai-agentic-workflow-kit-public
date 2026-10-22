@@ -1,0 +1,18 @@
+{
+  "channels_schema": 1,
+  "stable": null,
+  "candidate": {
+    "version": "0.4.12",
+    "kit_bundle_digest": null,
+    "state": "awaiting-local-release"
+  },
+  "promotion_policy": {
+    "requires_fixture_pass": true,
+    "requires_canary_repos": [
+      "sample-managed-service",
+      "sample-legacy-service"
+    ],
+    "requires_days_in_candidate": 7,
+    "requires_human_approval": true
+  }
+}

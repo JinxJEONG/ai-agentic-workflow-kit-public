@@ -1,0 +1,51 @@
+---
+version: 2
+last_verified: '{{DATE}}'
+status: draft
+workspace:
+  name: '{{PROJECT_NAME}}'
+  root: '{{PROJECT_ROOT}}'
+  mode: '{{WORKSPACE_MODE}}'
+repos:
+  main:
+    path: .
+    branch: '{{DEFAULT_BRANCH}}'
+services: {{SERVICES_YAML}}
+protected_paths:
+  - .env
+  - .env.*
+  - secrets/
+  - production/
+  - live/
+tier3_path_patterns:
+  - db/**
+  - database/**
+  - migrations/**
+  - prisma/**
+  - supabase/**
+  - deploy/**
+  - auth/**
+  - authentication/**
+  - authorization/**
+  - payments/**
+  - privacy/**
+  - config/environments/**
+  - infrastructure/**
+  - infra/**
+  - .github/workflows/**
+  - Dockerfile
+  - docker-compose*.yml
+tier3_risk_signals:
+  - database
+  - authentication
+  - authorization
+  - payments
+  - privacy
+  - deployment
+  - environment
+  - secrets
+database:
+  enabled: false
+  protected_names: []
+  isolated_name_pattern: ''
+  default_source: ''
