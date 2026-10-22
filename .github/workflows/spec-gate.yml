@@ -111,9 +111,9 @@ jobs:
 
       - name: Resolve the exact private workflow-kit source
         id: kit-source
-        uses: JinxJEONG/ai-agentic-workflow-kit-public/.github/actions/spec-gate-source@5be2618a8e0fd7d77ba252100b05e72feab17e6a
+        uses: JinxJEONG/ai-agentic-workflow-kit-public/.github/actions/spec-gate-source@a04f39f1e7a1e4b73a4d745e0e291c2eb109fbe4
         with:
-          expected-ref: 5be2618a8e0fd7d77ba252100b05e72feab17e6a
+          expected-ref: a04f39f1e7a1e4b73a4d745e0e291c2eb109fbe4
           expected-bundle-digest: ${{ inputs.kit_bundle_digest }}
 
       - name: Check out project with history
